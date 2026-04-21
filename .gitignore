@@ -1,0 +1,36 @@
+# Environment variables - NEVER commit these
+.env
+.env.local
+.env.production
+
+# n8n local data
+.n8n/
+n8n-data/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp
+tmp/
+temp/
+
+
+#agents
+Claude.md
