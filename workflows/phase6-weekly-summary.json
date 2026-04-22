@@ -82,7 +82,7 @@
         500
       ],
       "parameters": {
-        "modelName": "models/gemini-2.0-flash"
+        "modelName": "models/gemini-2.5-flash"
       },
       "credentials": {
         "googlePalmApi": {
@@ -165,7 +165,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const notionId = $json.id ? $json.id.replace(/-/g,'') : '';\nconst notionUrl = notionId ? `https://www.notion.so/${notionId}` : 'N/A';\nconst stats = $('Parse Narrative').item.json;\nconst sourceStr = Object.entries(stats.by_source||{}).map(([k,v])=>`${k} (${v})`).join(' | ') || 'N/A';\nconst competitorLines = (stats.top3_competitors||[]).map(([name,count],i)=>`${i+1}. ${name} \u2014 ${count} mentions`).join('\\n') || 'None this week';\nconst hotLead = stats.top5_leads && stats.top5_leads.length > 0 ? stats.top5_leads[0] : null;\nconst hotLeadStr = hotLead ? `${hotLead.title} \u2014 Score: ${hotLead.boosted_score}\\n${hotLead.url}` : 'N/A';\nconst message = `\ud83d\udcc8 Weekly Signal Report \u2014 ${stats.date_range}\\n\\n\ud83d\udcca Total Signals: ${stats.total}\\n\ud83d\udd25 Hot Leads: ${stats.hot_count}\\n\ud83d\udce1 Sources: ${sourceStr}\\n\\n\ud83c\udfc6 Top Competitors Mentioned:\\n${competitorLines}\\n\\n\ud83d\udca1 Top Intent: ${stats.top_intent}\\n\\n\ud83c\udfaf Hottest Lead This Week:\\n${hotLeadStr}\\n\\n\ud83d\udcdd Summary:\\n${stats.narrative}\\n\\nFull report \u2192 ${notionUrl}`;\nreturn {json:{message}};"
+        "jsCode": "const notionId = $json.id ? $json.id.replace(/-/g,'') : '';\nconst notionUrl = notionId ? `https://www.notion.so/${notionId}` : 'N/A';\nconst stats = $('Parse Narrative').item.json;\nconst sourceStr = Object.entries(stats.by_source||{}).map(([k,v])=>`${k} (${v})`).join(' | ') || 'N/A';\nconst competitorLines = (stats.top3_competitors||[]).map(([name,count],i)=>`${i+1}. ${name} \u2014 ${count} mentions`).join('\\n') || 'None this week';\nconst hotLead = stats.top5_leads && stats.top5_leads.length > 0 ? stats.top5_leads[0] : null;\nconst hotLeadStr = hotLead ? `${hotLead.title} \u2014 Score: ${hotLead.boosted_score}\\n${hotLead.url}` : 'N/A';\nlet message = `\ud83d\udcc8 Weekly Signal Report \u2014 ${stats.date_range}\\n\\n\ud83d\udcca Total Signals: ${stats.total}\\n\ud83d\udd25 Hot Leads: ${stats.hot_count}\\n\ud83d\udce1 Sources: ${sourceStr}\\n\\n\ud83c\udfc6 Top Competitors Mentioned:\\n${competitorLines}\\n\\n\ud83d\udca1 Top Intent: ${stats.top_intent}\\n\\n\ud83c\udfaf Hottest Lead This Week:\\n${hotLeadStr}\\n\\n\ud83d\udcdd Summary:\\n${stats.narrative}\\n\\nFull report \u2192 ${notionUrl}`;\nif (message.length > 3800) {\n  message = message.slice(0, 3750).trimEnd() + '\\n\\n...truncated for Telegram';\n}\nreturn {json:{message}};"
       }
     },
     {

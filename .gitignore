@@ -2,10 +2,12 @@
 .env
 .env.local
 .env.production
+credential.txt
 
 # n8n local data
 .n8n/
 n8n-data/
+.tmp-db/
 
 # Node
 node_modules/
@@ -30,6 +32,11 @@ Thumbs.db
 # Temp
 tmp/
 temp/
+.tmp*
+all-workflows-export.json
+*-current-export.json
+*-live.json
+.claude/
 
 
 #agents

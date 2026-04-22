@@ -1,10 +1,10 @@
 {
-  "id": "GpCfxw1NNEV3fYiG",
-  "name": "Phase 1 \u2014 Reddit Pipeline",
+  "id": "s4V8kLhP2mN7xQ1c",
+  "name": "Workflow 1 \u2014 HN + Product Hunt Collector",
   "active": false,
   "nodes": [
     {
-      "id": "node1",
+      "id": "n1",
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -24,65 +24,131 @@
       }
     },
     {
-      "id": "node2",
-      "name": "Setup Reddit URLs",
+      "id": "n2",
+      "name": "Setup HN URLs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         220,
-        300
+        160
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "return [\n  {json: {url: 'https://www.reddit.com/r/SaaS/search.json?q=nps+csat+feedback+survey+churn+delighted&sort=new&limit=25&t=day', subreddit: 'SaaS'}},\n  {json: {url: 'https://www.reddit.com/r/CustomerSuccess/search.json?q=nps+csat+feedback+survey+churn&sort=new&limit=25&t=day', subreddit: 'CustomerSuccess'}},\n  {json: {url: 'https://www.reddit.com/r/entrepreneur/search.json?q=nps+csat+feedback+survey+delighted&sort=new&limit=25&t=day', subreddit: 'entrepreneur'}},\n  {json: {url: 'https://www.reddit.com/r/startups/search.json?q=nps+csat+customer+feedback+churn&sort=new&limit=25&t=day', subreddit: 'startups'}},\n  {json: {url: 'https://www.reddit.com/r/productmanagement/search.json?q=nps+csat+survey+tool+feedback&sort=new&limit=25&t=day', subreddit: 'productmanagement'}}\n];"
+        "jsCode": "return [\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=nps+csat+survey+tool&tags=story&hitsPerPage=20', query_type: 'stories'}},\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=customer+feedback+tool&tags=ask_hn&hitsPerPage=10', query_type: 'ask_hn'}},\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=delighted+survicate+typeform+survey&tags=story&hitsPerPage=10', query_type: 'competitors'}}\n];"
       }
     },
     {
-      "id": "node3",
-      "name": "Fetch Reddit Posts",
+      "id": "n3",
+      "name": "Fetch HN Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
         440,
-        300
+        160
       ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ $json.url }}",
         "method": "GET",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "User-Agent",
-              "value": "n8n:elvan-signal-bot:1.0"
-            }
-          ]
-        },
         "options": {}
       }
     },
     {
-      "id": "node4",
-      "name": "Flatten Reddit Posts",
+      "id": "n4",
+      "name": "Flatten HN Posts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         660,
-        300
+        160
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst posts = [];\nfor (const item of items) {\n  const children = item.json && item.json.data && item.json.data.children ? item.json.data.children : [];\n  for (const child of children) {\n    const d = child.data;\n    if (!d || d.stickied) continue;\n    posts.push({\n      json: {\n        title: d.title || '',\n        body: d.selftext || '',\n        url: 'https://www.reddit.com' + d.permalink,\n        author: d.author || '',\n        subreddit: d.subreddit || '',\n        source: 'Reddit',\n        created_utc: d.created_utc || 0\n      }\n    });\n  }\n}\nreturn posts;"
+        "jsCode": "const items = $input.all();\nconst posts = [];\nfor (const item of items) {\n  const hits = item.json && item.json.hits ? item.json.hits : [];\n  for (const hit of hits) {\n    if (!hit.title) continue;\n    posts.push({\n      json: {\n        title: hit.title || '',\n        body: hit.story_text || hit.comment_text || '',\n        url: 'https://news.ycombinator.com/item?id=' + hit.objectID,\n        author: hit.author || '',\n        subreddit: '',\n        source: 'HackerNews',\n        objectID: hit.objectID || '',\n        points: hit.points || 0,\n        num_comments: hit.num_comments || 0\n      }\n    });\n  }\n}\nreturn posts;"
       }
     },
     {
-      "id": "node5",
+      "id": "n5",
+      "name": "Setup PH Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        440
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cx_query = `query { posts(order: NEWEST, topic: \"customer-success\", first: 20) { edges { node { id name tagline description url votesCount commentsCount createdAt } } } }`;\nconst competitor_query = `query { posts(order: NEWEST, first: 20) { edges { node { id name tagline description url votesCount createdAt comments(first: 5, order: VOTES) { edges { node { body } } } } } } }`;\n\nreturn [\n  { json: { query_type: 'cx_posts', graphql_query: cx_query } },\n  { json: { query_type: 'competitor_search', graphql_query: competitor_query } }\n];"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Fetch PH Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        440
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "url": "https://api.producthunt.com/v2/api/graphql",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.PRODUCTHUNT_DEV_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({query: $json.graphql_query}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Flatten PH Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        440
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst posts = [];\n\nfor (const item of items) {\n  const edges = item.json && item.json.data && item.json.data.posts ? item.json.data.posts.edges : [];\n\n  for (const edge of edges) {\n    const node = edge.node;\n    if (!node || !node.name) continue;\n\n    const commentBodies = (node.comments && node.comments.edges ? node.comments.edges : [])\n      .map(e => e.node && e.node.body ? e.node.body : '')\n      .filter(Boolean)\n      .join(' | ');\n\n    posts.push({\n      json: {\n        title: node.name || '',\n        body: [node.tagline, node.description, commentBodies].filter(Boolean).join(' '),\n        url: node.url || '',\n        author: '',\n        subreddit: '',\n        source: 'ProductHunt',\n        ph_id: node.id || '',\n        votes: node.votesCount || 0,\n        comments_count: node.commentsCount || 0\n      }\n    });\n  }\n}\n\nreturn posts;"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Merge Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2,
+        "options": {}
+      }
+    },
+    {
+      "id": "n9",
       "name": "Keyword Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
+        1100,
         300
       ],
       "parameters": {
@@ -91,12 +157,12 @@
       }
     },
     {
-      "id": "node6",
+      "id": "n10",
       "name": "Limit",
       "type": "n8n-nodes-base.limit",
       "typeVersion": 1,
       "position": [
-        1100,
+        1320,
         300
       ],
       "parameters": {
@@ -104,12 +170,12 @@
       }
     },
     {
-      "id": "node7",
+      "id": "n11",
       "name": "Dedup Static Memory",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
+        1540,
         300
       ],
       "parameters": {
@@ -118,16 +184,16 @@
       }
     },
     {
-      "id": "node8",
+      "id": "n12",
       "name": "Google Gemini Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        1540,
+        1760,
         500
       ],
       "parameters": {
-        "modelName": "models/gemini-2.0-flash"
+        "modelName": "models/gemini-2.5-flash"
       },
       "credentials": {
         "googlePalmApi": {
@@ -137,36 +203,22 @@
       }
     },
     {
-      "id": "node9",
+      "id": "n13",
       "name": "Basic LLM Chain",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
-      "position": [
-        1540,
-        300
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "=You are an analyst for Elvan.ai, a B2B SaaS NPS/CSAT/CES survey platform.\\n\\nAnalyze this social media post and return a JSON object only. No explanation, no markdown.\\n\\nPost title: {{ $json.title }}\\nPost body: {{ $json.body }}\\nSource: {{ $json.source }}\\n\\nReturn this exact JSON:\\n{\\n  \\\"pain_point\\\": \\\"one sentence describing the core problem\\\",\\n  \\\"intent\\\": \\\"buying | venting | learning | comparing\\\",\\n  \\\"urgency\\\": \\\"high | medium | low\\\",\\n  \\\"tool_mentioned\\\": \\\"name of tool or competitor mentioned, or null\\\",\\n  \\\"elvan_angle\\\": \\\"one sentence on how Elvan could address this\\\",\\n  \\\"score\\\": 5,\\n  \\\"draft_reply\\\": \\\"a helpful, non-promotional comment Elvan could post. Sound human, not salesy. Max 3 sentences.\\\"\\n}"
-      }
-    },
-    {
-      "id": "node10",
-      "name": "Parse Gemini Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "position": [
         1760,
         300
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const rawText = item.json.text || item.json.output || item.json.response || '';\n  let parsed = {};\n  try {\n    const cleaned = rawText.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n    parsed = JSON.parse(cleaned);\n  } catch(_) {\n    parsed = {pain_point:'Parse error',intent:'learning',urgency:'low',tool_mentioned:null,elvan_angle:'',score:1,draft_reply:''};\n  }\n  results.push({\n    json: {\n      ...item.json,\n      pain_point: parsed.pain_point || '',\n      intent: parsed.intent || 'learning',\n      urgency: parsed.urgency || 'low',\n      tool_mentioned: parsed.tool_mentioned || null,\n      elvan_angle: parsed.elvan_angle || '',\n      base_score: Number(parsed.score) || 1,\n      draft_reply: parsed.draft_reply || ''\n    }\n  });\n}\nreturn results;"
+        "promptType": "define",
+        "text": "=You are an analyst for Elvan.ai, a B2B SaaS NPS/CSAT/CES survey platform.\\n\\nAnalyze this community post and return a JSON object only. No explanation, no markdown.\\n\\nPost title: {{ $json.title }}\\nPost body: {{ $json.body }}\\nSource: {{ $json.source }}\\n\\nReturn this exact JSON:\\n{\\n  \\\"pain_point\\\": \\\"one sentence describing the core problem\\\",\\n  \\\"intent\\\": \\\"buying | venting | learning | comparing\\\",\\n  \\\"urgency\\\": \\\"high | medium | low\\\",\\n  \\\"tool_mentioned\\\": \\\"name of tool or competitor mentioned, or null\\\",\\n  \\\"elvan_angle\\\": \\\"one sentence on how Elvan could address this\\\",\\n  \\\"score\\\": 5,\\n  \\\"draft_reply\\\": \\\"a helpful, non-promotional comment Elvan could post. Sound human, not salesy. Max 3 sentences.\\\"\\n}"
       }
     },
     {
-      "id": "node11",
-      "name": "Scoring",
+      "id": "n14",
+      "name": "Parse Gemini Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -175,16 +227,30 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const intentKws = ['alternative','replace','replacement','looking for','recommend','switch','switching','what do you use','anyone using','anyone tried','moved away','moved from','migrated','shut down','shutdown'];\nconst items = $input.all();\nreturn items.map(item => {\n  const title = item.json.title || '';\n  const body = item.json.body || '';\n  const base_score = item.json.base_score || 1;\n  const text = (title + ' ' + body).toLowerCase();\n  let boost = 0;\n  if (text.includes('?') && intentKws.some(kw => text.includes(kw))) boost += 25;\n  if (text.includes('delighted')) boost += 10;\n  const boosted_score = base_score + boost;\n  const tier = boosted_score >= 8 ? 'hot' : boosted_score >= 5 ? 'medium' : 'low';\n  return {json: {...item.json, boosted_score, tier}};\n});"
+        "jsCode": "const items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const rawText = item.json.text || item.json.output || item.json.response || '';\n  let parsed = {};\n  try {\n    const cleaned = rawText.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n    parsed = JSON.parse(cleaned);\n  } catch (_) {\n    parsed = {pain_point:'Parse error',intent:'learning',urgency:'low',tool_mentioned:null,elvan_angle:'',score:1,draft_reply:''};\n  }\n  results.push({\n    json: {\n      ...item.json,\n      pain_point: parsed.pain_point || '',\n      intent: parsed.intent || 'learning',\n      urgency: parsed.urgency || 'low',\n      tool_mentioned: parsed.tool_mentioned || null,\n      elvan_angle: parsed.elvan_angle || '',\n      base_score: Number(parsed.score) || 1,\n      draft_reply: parsed.draft_reply || ''\n    }\n  });\n}\nreturn results;"
       }
     },
     {
-      "id": "node12",
+      "id": "n15",
+      "name": "Scoring",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const intentKws = ['alternative','replace','replacement','looking for','recommend','switch','switching','what do you use','anyone using','anyone tried','moved away','moved from','migrated','shut down','shutdown'];\nconst competitorKws = ['delighted','survicate','typeform','qualtrics','medallia','hotjar','intercom'];\nconst items = $input.all();\nreturn items.map(item => {\n  const title = item.json.title || '';\n  const body = item.json.body || '';\n  const base_score = Number(item.json.base_score) || 1;\n  const text = (title + ' ' + body).toLowerCase();\n  let boost = 0;\n  if (text.includes('?') && intentKws.some(kw => text.includes(kw))) boost += 3;\n  if (competitorKws.some(kw => text.includes(kw))) boost += 2;\n  const boosted_score = Math.min(10, base_score + boost);\n  const tier = boosted_score >= 8 ? 'hot' : boosted_score >= 5 ? 'medium' : 'low';\n  return {json: {...item.json, boosted_score, tier}};\n});"
+      }
+    },
+    {
+      "id": "n16",
       "name": "Notion Dedup Query",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2200,
+        2420,
         300
       ],
       "continueOnFail": true,
@@ -214,12 +280,12 @@
       }
     },
     {
-      "id": "node13",
+      "id": "n17",
       "name": "Filter New Posts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2420,
+        2640,
         300
       ],
       "parameters": {
@@ -228,12 +294,12 @@
       }
     },
     {
-      "id": "node14",
+      "id": "n18",
       "name": "Route by Tier",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        2640,
+        2860,
         300
       ],
       "parameters": {
@@ -305,19 +371,19 @@
       }
     },
     {
-      "id": "node15",
+      "id": "n19",
       "name": "Telegram Hot Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        2860,
+        3080,
         0
       ],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "=\ud83d\udd25 HOT LEAD \u2014 {{ $json.source }} / {{ $json.subreddit }}\n\n\ud83d\udc64 Score: {{ $json.boosted_score }}/10 | Intent: {{ $json.intent }} | Urgency: {{ $json.urgency }}\n\ud83d\udccc {{ $json.title }}\n\n\ud83d\udca1 Pain Point: {{ $json.pain_point }}\n\ud83d\udee0 Tool Mentioned: {{ $json.tool_mentioned }}\n\ud83c\udfaf Elvan Angle: {{ $json.elvan_angle }}\n\n\ud83d\udcac Draft Reply:\n{{ $json.draft_reply }}\n\n\ud83d\udd17 {{ $json.url }}\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nReview draft \u2192 post manually",
+        "text": "=\ud83d\udd25 HOT LEAD \u2014 {{ $json.source }}\n\n\ud83d\udc64 Score: {{ $json.boosted_score }}/10 | Intent: {{ $json.intent }} | Urgency: {{ $json.urgency }}\n\ud83d\udccc {{ $json.title }}\n\n\ud83d\udca1 Pain Point: {{ $json.pain_point }}\n\ud83d\udee0 Tool Mentioned: {{ $json.tool_mentioned }}\n\ud83c\udfaf Elvan Angle: {{ $json.elvan_angle }}\n\n\ud83d\udcac Draft Reply:\n{{ $json.draft_reply }}\n\n\ud83d\udd17 {{ $json.url }}\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nReview draft \u2192 post manually",
         "additionalFields": {}
       },
       "credentials": {
@@ -328,26 +394,26 @@
       }
     },
     {
-      "id": "node16",
+      "id": "n20",
       "name": "Prep Hot Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3080,
+        3300,
         0
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const post = $('Route by Tier').item.json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Reddit'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: true},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
+        "jsCode": "const post = $('Route by Tier').item.json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: true},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
     {
-      "id": "node17",
+      "id": "n21",
       "name": "Notion Insert Hot",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3300,
+        3520,
         0
       ],
       "continueOnFail": true,
@@ -373,26 +439,26 @@
       }
     },
     {
-      "id": "node18",
+      "id": "n22",
       "name": "Prep Medium Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
+        3080,
         300
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Reddit'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
+        "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
     {
-      "id": "node19",
+      "id": "n23",
       "name": "Notion Insert Medium",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3080,
+        3300,
         300
       ],
       "continueOnFail": true,
@@ -418,26 +484,26 @@
       }
     },
     {
-      "id": "node20",
+      "id": "n24",
       "name": "Prep Low Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
+        3080,
         600
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Reddit'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
+        "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
     {
-      "id": "node21",
+      "id": "n25",
       "name": "Notion Insert Low",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3080,
+        3300,
         600
       ],
       "continueOnFail": true,
@@ -468,36 +534,85 @@
       "main": [
         [
           {
-            "node": "Setup Reddit URLs",
+            "node": "Setup HN URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Setup PH Queries",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Setup Reddit URLs": {
+    "Setup HN URLs": {
       "main": [
         [
           {
-            "node": "Fetch Reddit Posts",
+            "node": "Fetch HN Posts",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fetch Reddit Posts": {
+    "Fetch HN Posts": {
       "main": [
         [
           {
-            "node": "Flatten Reddit Posts",
+            "node": "Flatten HN Posts",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Flatten Reddit Posts": {
+    "Flatten HN Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup PH Queries": {
+      "main": [
+        [
+          {
+            "node": "Fetch PH Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PH Posts": {
+      "main": [
+        [
+          {
+            "node": "Flatten PH Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten PH Posts": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Sources": {
       "main": [
         [
           {

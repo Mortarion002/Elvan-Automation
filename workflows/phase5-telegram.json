@@ -83,7 +83,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\n\nconst timestamp = new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short'});\nconst lines = items.map(item => {\n  const p = item.json;\n  const reply = p.draft_reply ? `  \ud83d\udcac ${p.draft_reply}` : '';\n  return `\u2022 ${p.title} (${p.source}) \u2014 Score: ${p.boosted_score}${reply ? '\\n' + reply : ''}\\n  \ud83d\udd17 ${p.url}`;\n}).join('\\n\\n');\n\nconst message = `\ud83d\udcca Signal Digest \u2014 ${timestamp}\\n\\n${lines}\\n\\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\nTotal signals this batch: ${items.length}`;\n\nreturn [{ json: { message, count: items.length } }];"
+        "jsCode": "const items = [...$input.all()].sort((a, b) => (b.json.boosted_score || 0) - (a.json.boosted_score || 0));\nif (items.length === 0) return [];\n\nconst maxItems = 8;\nconst selected = items.slice(0, maxItems);\nconst timestamp = new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short'});\nconst lines = selected.map(item => {\n  const p = item.json;\n  const reply = p.draft_reply ? `  \ud83d\udcac ${p.draft_reply}` : '';\n  return `\u2022 ${p.title} (${p.source}) \u2014 Score: ${p.boosted_score}${reply ? '\\n' + reply : ''}\\n  \ud83d\udd17 ${p.url}`;\n}).join('\\n\\n');\nconst hiddenCount = Math.max(0, items.length - selected.length);\nconst overflowNote = hiddenCount > 0 ? `\\n\\n...and ${hiddenCount} more signal(s) not shown.` : '';\nlet message = `\ud83d\udcca Signal Digest \u2014 ${timestamp}\\n\\n${lines}${overflowNote}\\n\\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\nTotal signals this batch: ${items.length}`;\nif (message.length > 3800) {\n  message = message.slice(0, 3750).trimEnd() + '\\n\\n...truncated for Telegram';\n}\nreturn [{ json: { message, count: items.length, page_ids: selected.map(item => item.json.page_id) } }];"
       }
     },
     {
@@ -120,7 +120,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const pages = $('Parse Digest Items').all();\nreturn pages.map(item => ({ json: { page_id: item.json.page_id } }));"
+        "jsCode": "const pageIds = $('Format Digest Message').first().json.page_ids || [];\nreturn pageIds.map(page_id => ({ json: { page_id } }));"
       }
     },
     {
