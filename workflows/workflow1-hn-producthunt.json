@@ -34,6 +34,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "return [\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=nps+csat+survey+tool&tags=story&hitsPerPage=20', query_type: 'stories'}},\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=customer+feedback+tool&tags=ask_hn&hitsPerPage=10', query_type: 'ask_hn'}},\n  {json: {url: 'https://hn.algolia.com/api/v1/search?query=delighted+survicate+typeform+survey&tags=story&hitsPerPage=10', query_type: 'competitors'}}\n];"
       }
     },
@@ -64,6 +65,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "const items = $input.all();\nconst posts = [];\nfor (const item of items) {\n  const hits = item.json && item.json.hits ? item.json.hits : [];\n  for (const hit of hits) {\n    if (!hit.title) continue;\n    posts.push({\n      json: {\n        title: hit.title || '',\n        body: hit.story_text || hit.comment_text || '',\n        url: 'https://news.ycombinator.com/item?id=' + hit.objectID,\n        author: hit.author || '',\n        subreddit: '',\n        source: 'HackerNews',\n        objectID: hit.objectID || '',\n        points: hit.points || 0,\n        num_comments: hit.num_comments || 0\n      }\n    });\n  }\n}\nreturn posts;"
       }
     },
@@ -78,6 +80,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "const cx_query = `query { posts(order: NEWEST, topic: \"customer-success\", first: 20) { edges { node { id name tagline description url votesCount commentsCount createdAt } } } }`;\nconst competitor_query = `query { posts(order: NEWEST, first: 20) { edges { node { id name tagline description url votesCount createdAt comments(first: 5, order: VOTES) { edges { node { body } } } } } } }`;\n\nreturn [\n  { json: { query_type: 'cx_posts', graphql_query: cx_query } },\n  { json: { query_type: 'competitor_search', graphql_query: competitor_query } }\n];"
       }
     },
@@ -109,7 +112,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({query: $json.graphql_query}) }}",
+        "jsonBody": "={{ ({ query: $json.graphql_query }) }}",
         "options": {}
       }
     },
@@ -124,6 +127,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "const items = $input.all();\nconst posts = [];\n\nfor (const item of items) {\n  const edges = item.json && item.json.data && item.json.data.posts ? item.json.data.posts.edges : [];\n\n  for (const edge of edges) {\n    const node = edge.node;\n    if (!node || !node.name) continue;\n\n    const commentBodies = (node.comments && node.comments.edges ? node.comments.edges : [])\n      .map(e => e.node && e.node.body ? e.node.body : '')\n      .filter(Boolean)\n      .join(' | ');\n\n    posts.push({\n      json: {\n        title: node.name || '',\n        body: [node.tagline, node.description, commentBodies].filter(Boolean).join(' '),\n        url: node.url || '',\n        author: '',\n        subreddit: '',\n        source: 'ProductHunt',\n        ph_id: node.id || '',\n        votes: node.votesCount || 0,\n        comments_count: node.commentsCount || 0\n      }\n    });\n  }\n}\n\nreturn posts;"
       }
     },
@@ -153,6 +157,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "const keywords = ['nps','csat','ces','net promoter','customer feedback','customer satisfaction','feedback tool','survey tool','churn','customer effort','typeform','delighted','survicate','medallia','customer success','onboarding survey','qualtrics','hotjar','intercom survey','feedback loop'];\nconst items = $input.all();\nreturn items.filter(item => {\n  const text = (item.json.title + ' ' + item.json.body).toLowerCase();\n  return keywords.some(kw => text.includes(kw));\n});"
       }
     },
@@ -180,25 +185,29 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
+        "language": "javaScript",
         "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.seenUrls) staticData.seenUrls = {};\nconst ONE_DAY = 24 * 60 * 60 * 1000;\nconst now = Date.now();\nfor (const url in staticData.seenUrls) {\n  if (now - staticData.seenUrls[url] > ONE_DAY) delete staticData.seenUrls[url];\n}\nconst items = $input.all();\nconst fresh = [];\nfor (const item of items) {\n  const url = item.json.url;\n  if (!url) continue;\n  if (!staticData.seenUrls[url]) {\n    staticData.seenUrls[url] = now;\n    fresh.push(item);\n  }\n}\nreturn fresh;"
       }
     },
     {
       "id": "n12",
-      "name": "Google Gemini Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "name": "ChatGPT Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.1,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
       "position": [
         1760,
         500
       ],
       "parameters": {
-        "modelName": "models/gemini-2.5-flash"
+        "model": "gpt-4o-mini"
       },
       "credentials": {
-        "googlePalmApi": {
+        "openAiApi": {
           "id": "1",
-          "name": "GEMINI_API"
+          "name": "OPENAI_API"
         }
       }
     },
@@ -207,6 +216,9 @@
       "name": "Basic LLM Chain",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
       "position": [
         1760,
         300
@@ -227,7 +239,8 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const rawText = item.json.text || item.json.output || item.json.response || '';\n  let parsed = {};\n  try {\n    const cleaned = rawText.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n    parsed = JSON.parse(cleaned);\n  } catch (_) {\n    parsed = {pain_point:'Parse error',intent:'learning',urgency:'low',tool_mentioned:null,elvan_angle:'',score:1,draft_reply:''};\n  }\n  results.push({\n    json: {\n      ...item.json,\n      pain_point: parsed.pain_point || '',\n      intent: parsed.intent || 'learning',\n      urgency: parsed.urgency || 'low',\n      tool_mentioned: parsed.tool_mentioned || null,\n      elvan_angle: parsed.elvan_angle || '',\n      base_score: Number(parsed.score) || 1,\n      draft_reply: parsed.draft_reply || ''\n    }\n  });\n}\nreturn results;"
+        "language": "javaScript",
+        "jsCode": "const llmItems = $input.all();\nconst sourceItems = $('Dedup Static Memory').all();\nconst results = [];\n\nfor (let i = 0; i < llmItems.length; i++) {\n  const item = llmItems[i];\n  const source = sourceItems[i] ? sourceItems[i].json : {};\n  const rawText = item.json.text || item.json.output || item.json.response || item.json.content || '';\n  let parsed = {};\n\n  try {\n    const cleaned = String(rawText).replace(/```json\\s*/gi, '').replace(/```\\s*/g, '').trim();\n    parsed = JSON.parse(cleaned);\n  } catch (_) {\n    parsed = {\n      pain_point: 'Parse error',\n      intent: 'learning',\n      urgency: 'low',\n      tool_mentioned: null,\n      elvan_angle: '',\n      score: 1,\n      draft_reply: ''\n    };\n  }\n\n  results.push({\n    json: {\n      ...source,\n      pain_point: parsed.pain_point || '',\n      intent: parsed.intent || 'learning',\n      urgency: parsed.urgency || 'low',\n      tool_mentioned: parsed.tool_mentioned || null,\n      elvan_angle: parsed.elvan_angle || '',\n      base_score: Number(parsed.score) || 1,\n      draft_reply: parsed.draft_reply || '',\n      llm_raw_output: String(rawText || '')\n    }\n  });\n}\n\nreturn results;"
       }
     },
     {
@@ -241,7 +254,8 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const intentKws = ['alternative','replace','replacement','looking for','recommend','switch','switching','what do you use','anyone using','anyone tried','moved away','moved from','migrated','shut down','shutdown'];\nconst competitorKws = ['delighted','survicate','typeform','qualtrics','medallia','hotjar','intercom'];\nconst items = $input.all();\nreturn items.map(item => {\n  const title = item.json.title || '';\n  const body = item.json.body || '';\n  const base_score = Number(item.json.base_score) || 1;\n  const text = (title + ' ' + body).toLowerCase();\n  let boost = 0;\n  if (text.includes('?') && intentKws.some(kw => text.includes(kw))) boost += 3;\n  if (competitorKws.some(kw => text.includes(kw))) boost += 2;\n  const boosted_score = Math.min(10, base_score + boost);\n  const tier = boosted_score >= 8 ? 'hot' : boosted_score >= 5 ? 'medium' : 'low';\n  return {json: {...item.json, boosted_score, tier}};\n});"
+        "language": "javaScript",
+        "jsCode": "const intentKws = ['alternative','replace','replacement','looking for','recommend','switch','switching','what do you use','anyone using','anyone tried','moved away','moved from','migrated','shut down','shutdown'];\nconst competitorKws = ['delighted','survicate','typeform','qualtrics','medallia','hotjar','intercom'];\nconst items = $input.all();\nconst validItems = items.filter(item => {\n  const url = String(item.json.url || '').trim();\n  return /^https?:\\/\\//i.test(url);\n});\n\nif (items.length > 0 && validItems.length === 0) {\n  throw new Error('Scoring received items, but all were missing valid URLs after Parse Gemini Response.');\n}\n\nreturn validItems.map(item => {\n  const title = item.json.title || '';\n  const body = item.json.body || '';\n  const source = item.json.source || '';\n  const base_score = Number(item.json.base_score) || 1;\n  const text = (title + ' ' + body).toLowerCase();\n  let boost = 0;\n  if (text.includes('?') && intentKws.some(kw => text.includes(kw))) boost += 3;\n  if (competitorKws.some(kw => text.includes(kw))) boost += 2;\n  if (source === 'HackerNews') {\n    if ((Number(item.json.points) || 0) >= 10) boost += 1;\n    if ((Number(item.json.num_comments) || 0) >= 3) boost += 1;\n  }\n  if (source === 'ProductHunt') {\n    if ((Number(item.json.votes) || 0) >= 20) boost += 1;\n    if ((Number(item.json.comments_count) || 0) >= 2) boost += 1;\n  }\n  const boosted_score = Math.min(10, base_score + boost);\n  const tier = boosted_score >= 7 ? 'hot' : boosted_score >= 5 ? 'medium' : 'low';\n  return {json: {...item.json, boosted_score, tier}};\n});"
       }
     },
     {
@@ -276,7 +290,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({filter: {property: 'URL', url: {equals: $json.url}}, page_size: 1}) }}"
+        "jsonBody": "={{ ({ filter: { property: 'URL', url: { equals: $json.url } }, page_size: 1 }) }}"
       }
     },
     {
@@ -290,7 +304,8 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const notionResponses = $input.all();\nconst scoredPosts = $('Scoring').all();\nconst results = [];\nfor (let i = 0; i < notionResponses.length; i++) {\n  const notionData = notionResponses[i].json;\n  const post = scoredPosts[i] ? scoredPosts[i].json : null;\n  if (post && (!notionData.results || notionData.results.length === 0)) {\n    results.push({json: post});\n  }\n}\nreturn results;"
+        "language": "javaScript",
+        "jsCode": "const notionResponses = $input.all();\nconst scoredPosts = $('Scoring').all();\nconst results = [];\nfor (let i = 0; i < notionResponses.length; i++) {\n  const notionData = notionResponses[i].json || {};\n  const post = scoredPosts[i] ? scoredPosts[i].json : null;\n  if (notionData.error || notionData.object === 'error' || Number(notionData.status) >= 400) {\n    const detail = notionData.message || notionData.error || notionData.code || ('HTTP ' + notionData.status);\n    const url = post && post.url ? post.url : 'unknown URL';\n    throw new Error('Notion dedup query failed for ' + url + ': ' + detail);\n  }\n  if (post && (!Array.isArray(notionData.results) || notionData.results.length === 0)) {\n    results.push({json: post});\n  }\n}\nreturn results;"
       }
     },
     {
@@ -404,6 +419,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
+        "language": "javaScript",
         "jsCode": "const post = $('Route by Tier').item.json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: true},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
@@ -435,7 +451,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}"
+        "jsonBody": "={{ $json }}"
       }
     },
     {
@@ -449,6 +465,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
+        "language": "javaScript",
         "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
@@ -480,7 +497,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}"
+        "jsonBody": "={{ $json }}"
       }
     },
     {
@@ -494,6 +511,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
+        "language": "javaScript",
         "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'Unknown'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
       }
     },
@@ -525,7 +543,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}"
+        "jsonBody": "={{ $json }}"
       }
     }
   ],
@@ -656,7 +674,7 @@
         ]
       ]
     },
-    "Google Gemini Chat Model": {
+    "ChatGPT Chat Model": {
       "ai_languageModel": [
         [
           {

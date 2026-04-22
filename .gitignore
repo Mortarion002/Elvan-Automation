@@ -33,6 +33,7 @@ Thumbs.db
 tmp/
 temp/
 .tmp*
+Explain*.txt
 all-workflows-export.json
 *-current-export.json
 *-live.json
