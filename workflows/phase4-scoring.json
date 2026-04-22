@@ -1,6 +1,6 @@
 {
   "id": "B9WBKNnAdsgFqCSl",
-  "name": "Phase 4 — Cross-Channel Lead Scoring",
+  "name": "Phase 4 \u2014 Cross-Channel Lead Scoring",
   "active": false,
   "nodes": [
     {
@@ -8,9 +8,19 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "parameters": {
-        "rule": {"interval": [{"field": "cronExpression", "expression": "0 */12 * * *"}]}
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */12 * * *"
+            }
+          ]
+        }
       }
     },
     {
@@ -18,7 +28,10 @@
       "name": "Query Notion 48h",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [220, 300],
+      "position": [
+        220,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/databases/' + $env.NOTION_DB_ID + '/query' }}",
@@ -26,9 +39,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -41,7 +63,10 @@
       "name": "Parse Notion Pages",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300],
+      "position": [
+        440,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const items = $input.all();\nconst pages = [];\nfor (const item of items) {\n  const results = item.json.results || [];\n  for (const page of results) {\n    const props = page.properties || {};\n    const toolRichText = props['Tool Mentioned'] && props['Tool Mentioned'].rich_text ? props['Tool Mentioned'].rich_text : [];\n    const toolMentioned = (toolRichText[0] && toolRichText[0].plain_text ? toolRichText[0].plain_text : '').toLowerCase().trim();\n    if (!toolMentioned) continue;\n    pages.push({\n      json: {\n        page_id: page.id,\n        title: props['Title'] && props['Title'].title && props['Title'].title[0] ? props['Title'].title[0].plain_text : '',\n        url: props['URL'] && props['URL'].url ? props['URL'].url : '',\n        source: props['Source'] && props['Source'].select ? props['Source'].select.name : '',\n        tool_mentioned: toolMentioned,\n        boosted_score: props['Boosted Score'] && props['Boosted Score'].number !== null ? props['Boosted Score'].number : 0,\n        alerted: props['Alerted'] ? props['Alerted'].checkbox : false,\n      }\n    });\n  }\n}\nreturn pages;"
@@ -52,7 +77,10 @@
       "name": "Find Cross-Channel Groups",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 300],
+      "position": [
+        660,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const items = $input.all();\nconst groups = {};\nfor (const item of items) {\n  const tool = item.json.tool_mentioned;\n  if (!tool) continue;\n  if (!groups[tool]) groups[tool] = [];\n  groups[tool].push(item.json);\n}\nconst crossChannel = [];\nfor (const [tool, pages] of Object.entries(groups)) {\n  const sources = [...new Set(pages.map(p => p.source))];\n  if (sources.length < 2) continue;\n  crossChannel.push({ json: { tool, sources, pages } });\n}\nreturn crossChannel;"
@@ -63,7 +91,10 @@
       "name": "Flatten Pages for Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 300],
+      "position": [
+        880,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const groups = $input.all();\nconst updates = [];\nfor (const group of groups) {\n  for (const page of group.json.pages) {\n    updates.push({\n      json: {\n        page_id: page.page_id,\n        new_score: (page.boosted_score || 0) + 15,\n        tool: group.json.tool,\n        alerted: page.alerted,\n      }\n    });\n  }\n}\nreturn updates;"
@@ -74,7 +105,10 @@
       "name": "Update Notion Score",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [1100, 300],
+      "position": [
+        1100,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/pages/' + $json.page_id }}",
@@ -82,9 +116,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -97,7 +140,10 @@
       "name": "Filter Alert Groups",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 300],
+      "position": [
+        1320,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const groups = $('Find Cross-Channel Groups').all();\nconst toAlert = [];\nfor (const group of groups) {\n  const pages = group.json.pages || [];\n  const anyUnalerted = pages.some(p => !p.alerted);\n  const maxNewScore = Math.max(...pages.map(p => (p.boosted_score || 0) + 15));\n  if (maxNewScore >= 8 && anyUnalerted) {\n    toAlert.push({\n      json: {\n        tool: group.json.tool,\n        sources: group.json.sources,\n        pages,\n        max_new_score: maxNewScore,\n      }\n    });\n  }\n}\nreturn toAlert;"
@@ -108,10 +154,13 @@
       "name": "Format Alert Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 300],
+      "position": [
+        1540,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const group = $json;\nconst postLines = group.pages.map(p => `• ${p.title} — ${p.url}`).join('\\n');\nconst sourcesStr = group.sources.join(' + ');\nreturn {\n  json: {\n    ...group,\n    message: `🚨 CROSS-CHANNEL SIGNAL — ${group.tool}\\n\\nAppeared on ${sourcesStr}\\nCombined Score: ${group.max_new_score}\\n\\nPosts:\\n${postLines}\\n\\n💡 Same pain point across platforms = high buying intent`\n  }\n};"
+        "jsCode": "const group = $json;\nconst postLines = group.pages.map(p => `\u2022 ${p.title} \u2014 ${p.url}`).join('\\n');\nconst sourcesStr = group.sources.join(' + ');\nreturn {\n  json: {\n    ...group,\n    message: `\ud83d\udea8 CROSS-CHANNEL SIGNAL \u2014 ${group.tool}\\n\\nAppeared on ${sourcesStr}\\nCombined Score: ${group.max_new_score}\\n\\nPosts:\\n${postLines}\\n\\n\ud83d\udca1 Same pain point across platforms = high buying intent`\n  }\n};"
       }
     },
     {
@@ -119,7 +168,10 @@
       "name": "Telegram Cross-Channel Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1760, 300],
+      "position": [
+        1760,
+        300
+      ],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
@@ -127,14 +179,22 @@
         "text": "={{ $json.message }}",
         "additionalFields": {}
       },
-      "credentials": {"telegramApi": {"id": "1", "name": "TELEGRAM_API"}}
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
     },
     {
       "id": "n10",
       "name": "Flatten Pages to Mark Alerted",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 300],
+      "position": [
+        1980,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const alertedGroups = $('Filter Alert Groups').all();\nconst pages = [];\nfor (const group of alertedGroups) {\n  for (const page of group.json.pages) {\n    if (!page.alerted) {\n      pages.push({ json: { page_id: page.page_id } });\n    }\n  }\n}\nreturn pages;"
@@ -145,7 +205,10 @@
       "name": "Update Alerted Flag",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [2200, 300],
+      "position": [
+        2200,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/pages/' + $json.page_id }}",
@@ -153,9 +216,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -165,16 +237,116 @@
     }
   ],
   "connections": {
-    "Schedule Trigger": {"main": [[{"node": "Query Notion 48h", "type": "main", "index": 0}]]},
-    "Query Notion 48h": {"main": [[{"node": "Parse Notion Pages", "type": "main", "index": 0}]]},
-    "Parse Notion Pages": {"main": [[{"node": "Find Cross-Channel Groups", "type": "main", "index": 0}]]},
-    "Find Cross-Channel Groups": {"main": [[{"node": "Flatten Pages for Update", "type": "main", "index": 0}]]},
-    "Flatten Pages for Update": {"main": [[{"node": "Update Notion Score", "type": "main", "index": 0}]]},
-    "Update Notion Score": {"main": [[{"node": "Filter Alert Groups", "type": "main", "index": 0}]]},
-    "Filter Alert Groups": {"main": [[{"node": "Format Alert Message", "type": "main", "index": 0}]]},
-    "Format Alert Message": {"main": [[{"node": "Telegram Cross-Channel Alert", "type": "main", "index": 0}]]},
-    "Telegram Cross-Channel Alert": {"main": [[{"node": "Flatten Pages to Mark Alerted", "type": "main", "index": 0}]]},
-    "Flatten Pages to Mark Alerted": {"main": [[{"node": "Update Alerted Flag", "type": "main", "index": 0}]]}
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Notion 48h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Notion 48h": {
+      "main": [
+        [
+          {
+            "node": "Parse Notion Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Notion Pages": {
+      "main": [
+        [
+          {
+            "node": "Find Cross-Channel Groups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Cross-Channel Groups": {
+      "main": [
+        [
+          {
+            "node": "Flatten Pages for Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Pages for Update": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Notion Score": {
+      "main": [
+        [
+          {
+            "node": "Filter Alert Groups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Alert Groups": {
+      "main": [
+        [
+          {
+            "node": "Format Alert Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Alert Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram Cross-Channel Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Cross-Channel Alert": {
+      "main": [
+        [
+          {
+            "node": "Flatten Pages to Mark Alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Pages to Mark Alerted": {
+      "main": [
+        [
+          {
+            "node": "Update Alerted Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1",

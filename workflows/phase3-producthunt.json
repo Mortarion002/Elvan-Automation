@@ -1,6 +1,6 @@
 {
   "id": "hfTzMUPfJ8jvAMz5",
-  "name": "Phase 3 — Product Hunt Pipeline",
+  "name": "Phase 3 \u2014 Product Hunt Pipeline",
   "active": false,
   "nodes": [
     {
@@ -8,10 +8,18 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "parameters": {
         "rule": {
-          "interval": [{"field": "cronExpression", "expression": "0 9 * * *"}]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
         }
       }
     },
@@ -20,7 +28,10 @@
       "name": "Setup PH Queries",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 300],
+      "position": [
+        220,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const cx_query = `query { posts(order: NEWEST, topic: \"customer-success\", first: 20) { edges { node { id name tagline description url votesCount commentsCount createdAt } } } }`;\nconst competitor_query = `query { posts(order: NEWEST, first: 20) { edges { node { id name tagline description url votesCount createdAt comments(first: 5, order: VOTES) { edges { node { body } } } } } } }`;\n\nreturn [\n  { json: { query_type: 'cx_posts', graphql_query: cx_query } },\n  { json: { query_type: 'competitor_search', graphql_query: competitor_query } }\n];"
@@ -31,7 +42,10 @@
       "name": "Fetch PH Posts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [440, 300],
+      "position": [
+        440,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "https://api.producthunt.com/v2/api/graphql",
@@ -39,8 +53,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.PRODUCTHUNT_DEV_TOKEN }}"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.PRODUCTHUNT_DEV_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -54,7 +74,10 @@
       "name": "Flatten PH Posts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 300],
+      "position": [
+        660,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const items = $input.all();\nconst posts = [];\n\nfor (const item of items) {\n  const edges = item.json && item.json.data && item.json.data.posts ? item.json.data.posts.edges : [];\n\n  for (const edge of edges) {\n    const node = edge.node;\n    if (!node || !node.name) continue;\n\n    const commentBodies = (node.comments && node.comments.edges ? node.comments.edges : [])\n      .map(e => e.node && e.node.body ? e.node.body : '')\n      .filter(Boolean)\n      .join(' | ');\n\n    posts.push({\n      json: {\n        title: node.name || '',\n        body: [node.tagline, node.description, commentBodies].filter(Boolean).join(' '),\n        url: node.url || '',\n        author: '',\n        subreddit: '',\n        source: 'ProductHunt',\n        ph_id: node.id || '',\n        votes: node.votesCount || 0,\n        comments_count: node.commentsCount || 0,\n      }\n    });\n  }\n}\n\nreturn posts;"
@@ -65,7 +88,10 @@
       "name": "Keyword Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 300],
+      "position": [
+        880,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const keywords = ['nps','csat','ces','net promoter','customer feedback','customer satisfaction','feedback tool','survey tool','churn','customer effort','typeform','delighted','survicate','medallia','customer success','onboarding survey','qualtrics','hotjar','intercom survey','feedback loop'];\nconst items = $input.all();\nreturn items.filter(item => {\n  const text = (item.json.title + ' ' + item.json.body).toLowerCase();\n  return keywords.some(kw => text.includes(kw));\n});"
@@ -76,15 +102,23 @@
       "name": "Limit",
       "type": "n8n-nodes-base.limit",
       "typeVersion": 1,
-      "position": [1100, 300],
-      "parameters": {"maxItems": 15}
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "maxItems": 15
+      }
     },
     {
       "id": "n7",
       "name": "Dedup Static Memory",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 300],
+      "position": [
+        1320,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.seenUrls) staticData.seenUrls = {};\nconst ONE_DAY = 24 * 60 * 60 * 1000;\nconst now = Date.now();\nfor (const url in staticData.seenUrls) {\n  if (now - staticData.seenUrls[url] > ONE_DAY) delete staticData.seenUrls[url];\n}\nconst items = $input.all();\nconst fresh = [];\nfor (const item of items) {\n  const url = item.json.url;\n  if (!url) continue;\n  if (!staticData.seenUrls[url]) {\n    staticData.seenUrls[url] = now;\n    fresh.push(item);\n  }\n}\nreturn fresh;"
@@ -94,17 +128,30 @@
       "id": "n8",
       "name": "Google Gemini Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [1540, 500],
-      "parameters": {"modelName": "models/gemini-2.0-flash"},
-      "credentials": {"googlePalmApi": {"id": "1", "name": "GEMINI_API"}}
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        500
+      ],
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash"
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "1",
+          "name": "GEMINI_API"
+        }
+      }
     },
     {
       "id": "n9",
       "name": "Basic LLM Chain",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
-      "position": [1540, 300],
+      "position": [
+        1540,
+        300
+      ],
       "parameters": {
         "promptType": "define",
         "text": "=You are an analyst for Elvan.ai, a B2B SaaS NPS/CSAT/CES survey platform.\\n\\nAnalyze this social media post and return a JSON object only. No explanation, no markdown.\\n\\nPost title: {{ $json.title }}\\nPost body: {{ $json.body }}\\nSource: {{ $json.source }}\\n\\nReturn this exact JSON:\\n{\\n  \\\"pain_point\\\": \\\"one sentence describing the core problem\\\",\\n  \\\"intent\\\": \\\"buying | venting | learning | comparing\\\",\\n  \\\"urgency\\\": \\\"high | medium | low\\\",\\n  \\\"tool_mentioned\\\": \\\"name of tool or competitor mentioned, or null\\\",\\n  \\\"elvan_angle\\\": \\\"one sentence on how Elvan could address this\\\",\\n  \\\"score\\\": 5,\\n  \\\"draft_reply\\\": \\\"a helpful, non-promotional comment Elvan could post. Sound human, not salesy. Max 3 sentences.\\\"\\n}"
@@ -115,7 +162,10 @@
       "name": "Parse Gemini Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 300],
+      "position": [
+        1760,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const rawText = item.json.text || item.json.output || item.json.response || '';\n  let parsed = {};\n  try {\n    const cleaned = rawText.replace(/```json\\s*/gi,'').replace(/```\\s*/g,'').trim();\n    parsed = JSON.parse(cleaned);\n  } catch(_) {\n    parsed = {pain_point:'Parse error',intent:'learning',urgency:'low',tool_mentioned:null,elvan_angle:'',score:1,draft_reply:''};\n  }\n  results.push({\n    json: {\n      ...item.json,\n      pain_point: parsed.pain_point || '',\n      intent: parsed.intent || 'learning',\n      urgency: parsed.urgency || 'low',\n      tool_mentioned: parsed.tool_mentioned || null,\n      elvan_angle: parsed.elvan_angle || '',\n      base_score: Number(parsed.score) || 1,\n      draft_reply: parsed.draft_reply || ''\n    }\n  });\n}\nreturn results;"
@@ -126,7 +176,10 @@
       "name": "Scoring",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 300],
+      "position": [
+        1980,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const intentKws = ['alternative','replace','replacement','looking for','recommend','switch','switching','what do you use','anyone using','anyone tried','moved away','moved from','migrated','shut down','shutdown'];\nconst items = $input.all();\nreturn items.map(item => {\n  const title = item.json.title || '';\n  const body = item.json.body || '';\n  const base_score = item.json.base_score || 1;\n  const text = (title + ' ' + body).toLowerCase();\n  let boost = 0;\n  if (text.includes('?') && intentKws.some(kw => text.includes(kw))) boost += 25;\n  if (text.includes('delighted')) boost += 10;\n  const boosted_score = base_score + boost;\n  const tier = boosted_score >= 8 ? 'hot' : boosted_score >= 5 ? 'medium' : 'low';\n  return {json: {...item.json, boosted_score, tier}};\n});"
@@ -137,7 +190,10 @@
       "name": "Notion Dedup Query",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [2200, 300],
+      "position": [
+        2200,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/databases/' + $env.NOTION_DB_ID + '/query' }}",
@@ -145,9 +201,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -160,7 +225,10 @@
       "name": "Filter New Posts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2420, 300],
+      "position": [
+        2420,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const notionResponses = $input.all();\nconst scoredPosts = $('Scoring').all();\nconst results = [];\nfor (let i = 0; i < notionResponses.length; i++) {\n  const notionData = notionResponses[i].json;\n  const post = scoredPosts[i] ? scoredPosts[i].json : null;\n  if (post && (!notionData.results || notionData.results.length === 0)) {\n    results.push({json: post});\n  }\n}\nreturn results;"
@@ -171,37 +239,72 @@
       "name": "Route by Tier",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [2640, 300],
+      "position": [
+        2640,
+        300
+      ],
       "parameters": {
-        "mode": "rules",
         "rules": {
-          "rules": [
+          "values": [
             {
               "conditions": {
-                "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
-                "conditions": [{"leftValue": "={{ $json.tier }}", "rightValue": "hot", "operator": {"type": "string", "operation": "equals"}}],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tier }}",
+                    "rightValue": "hot",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "Hot"
+              }
             },
             {
               "conditions": {
-                "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
-                "conditions": [{"leftValue": "={{ $json.tier }}", "rightValue": "medium", "operator": {"type": "string", "operation": "equals"}}],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tier }}",
+                    "rightValue": "medium",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "Medium"
+              }
             },
             {
               "conditions": {
-                "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
-                "conditions": [{"leftValue": "={{ $json.tier }}", "rightValue": "low", "operator": {"type": "string", "operation": "equals"}}],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tier }}",
+                    "rightValue": "low",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
                 "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "Low"
+              }
             }
           ]
         },
@@ -213,22 +316,33 @@
       "name": "Telegram Hot Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [2860, 0],
+      "position": [
+        2860,
+        0
+      ],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
         "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
-        "text": "=🔥 HOT LEAD — {{ $json.source }}\n\n👤 Score: {{ $json.boosted_score }}/10 | Intent: {{ $json.intent }} | Urgency: {{ $json.urgency }}\n📌 {{ $json.title }}\n\n💡 Pain Point: {{ $json.pain_point }}\n🛠 Tool Mentioned: {{ $json.tool_mentioned }}\n🎯 Elvan Angle: {{ $json.elvan_angle }}\n\n💬 Draft Reply:\n{{ $json.draft_reply }}\n\n🔗 {{ $json.url }}\n\n─────────────────────\nReview draft → post manually",
+        "text": "=\ud83d\udd25 HOT LEAD \u2014 {{ $json.source }}\n\n\ud83d\udc64 Score: {{ $json.boosted_score }}/10 | Intent: {{ $json.intent }} | Urgency: {{ $json.urgency }}\n\ud83d\udccc {{ $json.title }}\n\n\ud83d\udca1 Pain Point: {{ $json.pain_point }}\n\ud83d\udee0 Tool Mentioned: {{ $json.tool_mentioned }}\n\ud83c\udfaf Elvan Angle: {{ $json.elvan_angle }}\n\n\ud83d\udcac Draft Reply:\n{{ $json.draft_reply }}\n\n\ud83d\udd17 {{ $json.url }}\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nReview draft \u2192 post manually",
         "additionalFields": {}
       },
-      "credentials": {"telegramApi": {"id": "1", "name": "TELEGRAM_API"}}
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
     },
     {
       "id": "n16",
       "name": "Prep Hot Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3080, 0],
+      "position": [
+        3080,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const post = $('Route by Tier').item.json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'ProductHunt'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: true},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
@@ -239,7 +353,10 @@
       "name": "Notion Insert Hot",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [3300, 0],
+      "position": [
+        3300,
+        0
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "https://api.notion.com/v1/pages",
@@ -247,8 +364,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
           ]
         },
         "sendBody": true,
@@ -261,7 +384,10 @@
       "name": "Prep Medium Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2860, 300],
+      "position": [
+        2860,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'ProductHunt'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
@@ -272,7 +398,10 @@
       "name": "Notion Insert Medium",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [3080, 300],
+      "position": [
+        3080,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "https://api.notion.com/v1/pages",
@@ -280,8 +409,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
           ]
         },
         "sendBody": true,
@@ -294,7 +429,10 @@
       "name": "Prep Low Notion Body",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2860, 600],
+      "position": [
+        2860,
+        600
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "const post = $json;\nconst dbId = $env.NOTION_DB_ID;\nreturn {\n  json: {\n    parent: {database_id: dbId},\n    properties: {\n      'Title': {title: [{text: {content: (post.title||'').substring(0,2000)}}]},\n      'Source': {select: {name: post.source||'ProductHunt'}},\n      'Subreddit': {rich_text: [{text: {content: post.subreddit||''}}]},\n      'Pain Point': {rich_text: [{text: {content: (post.pain_point||'').substring(0,2000)}}]},\n      'Intent': {select: {name: post.intent||'learning'}},\n      'Urgency': {select: {name: post.urgency||'low'}},\n      'Tool Mentioned': {rich_text: [{text: {content: String(post.tool_mentioned||'')}}]},\n      'Elvan Angle': {rich_text: [{text: {content: (post.elvan_angle||'').substring(0,2000)}}]},\n      'Base Score': {number: post.base_score||0},\n      'Boosted Score': {number: post.boosted_score||0},\n      'Draft Reply': {rich_text: [{text: {content: (post.draft_reply||'').substring(0,2000)}}]},\n      'URL': {url: post.url||''},\n      'Alerted': {checkbox: false},\n      'Created At': {date: {start: new Date().toISOString()}}\n    }\n  }\n};"
@@ -305,7 +443,10 @@
       "name": "Notion Insert Low",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [3080, 600],
+      "position": [
+        3080,
+        600
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "https://api.notion.com/v1/pages",
@@ -313,8 +454,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
           ]
         },
         "sendBody": true,
@@ -324,30 +471,218 @@
     }
   ],
   "connections": {
-    "Schedule Trigger": {"main": [[{"node": "Setup PH Queries", "type": "main", "index": 0}]]},
-    "Setup PH Queries": {"main": [[{"node": "Fetch PH Posts", "type": "main", "index": 0}]]},
-    "Fetch PH Posts": {"main": [[{"node": "Flatten PH Posts", "type": "main", "index": 0}]]},
-    "Flatten PH Posts": {"main": [[{"node": "Keyword Filter", "type": "main", "index": 0}]]},
-    "Keyword Filter": {"main": [[{"node": "Limit", "type": "main", "index": 0}]]},
-    "Limit": {"main": [[{"node": "Dedup Static Memory", "type": "main", "index": 0}]]},
-    "Dedup Static Memory": {"main": [[{"node": "Basic LLM Chain", "type": "main", "index": 0}]]},
-    "Google Gemini Chat Model": {"ai_languageModel": [[{"node": "Basic LLM Chain", "type": "ai_languageModel", "index": 0}]]},
-    "Basic LLM Chain": {"main": [[{"node": "Parse Gemini Response", "type": "main", "index": 0}]]},
-    "Parse Gemini Response": {"main": [[{"node": "Scoring", "type": "main", "index": 0}]]},
-    "Scoring": {"main": [[{"node": "Notion Dedup Query", "type": "main", "index": 0}]]},
-    "Notion Dedup Query": {"main": [[{"node": "Filter New Posts", "type": "main", "index": 0}]]},
-    "Filter New Posts": {"main": [[{"node": "Route by Tier", "type": "main", "index": 0}]]},
-    "Route by Tier": {
+    "Schedule Trigger": {
       "main": [
-        [{"node": "Telegram Hot Alert", "type": "main", "index": 0}],
-        [{"node": "Prep Medium Notion Body", "type": "main", "index": 0}],
-        [{"node": "Prep Low Notion Body", "type": "main", "index": 0}]
+        [
+          {
+            "node": "Setup PH Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Telegram Hot Alert": {"main": [[{"node": "Prep Hot Notion Body", "type": "main", "index": 0}]]},
-    "Prep Hot Notion Body": {"main": [[{"node": "Notion Insert Hot", "type": "main", "index": 0}]]},
-    "Prep Medium Notion Body": {"main": [[{"node": "Notion Insert Medium", "type": "main", "index": 0}]]},
-    "Prep Low Notion Body": {"main": [[{"node": "Notion Insert Low", "type": "main", "index": 0}]]}
+    "Setup PH Queries": {
+      "main": [
+        [
+          {
+            "node": "Fetch PH Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PH Posts": {
+      "main": [
+        [
+          {
+            "node": "Flatten PH Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten PH Posts": {
+      "main": [
+        [
+          {
+            "node": "Keyword Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword Filter": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Dedup Static Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup Static Memory": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scoring": {
+      "main": [
+        [
+          {
+            "node": "Notion Dedup Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Dedup Query": {
+      "main": [
+        [
+          {
+            "node": "Filter New Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Posts": {
+      "main": [
+        [
+          {
+            "node": "Route by Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Tier": {
+      "main": [
+        [
+          {
+            "node": "Telegram Hot Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Medium Notion Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Low Notion Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Hot Alert": {
+      "main": [
+        [
+          {
+            "node": "Prep Hot Notion Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Hot Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Insert Hot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Medium Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Insert Medium",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Low Notion Body": {
+      "main": [
+        [
+          {
+            "node": "Notion Insert Low",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1",

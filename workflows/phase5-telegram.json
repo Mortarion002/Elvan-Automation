@@ -1,6 +1,6 @@
 {
   "id": "IOrnWq6h66gpuNT6",
-  "name": "Phase 5 — Telegram Digest",
+  "name": "Phase 5 \u2014 Telegram Digest",
   "active": false,
   "nodes": [
     {
@@ -8,9 +8,19 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "parameters": {
-        "rule": {"interval": [{"field": "cronExpression", "expression": "15 */6 * * *"}]}
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 */6 * * *"
+            }
+          ]
+        }
       }
     },
     {
@@ -18,7 +28,10 @@
       "name": "Query Medium Signals",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [220, 300],
+      "position": [
+        220,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/databases/' + $env.NOTION_DB_ID + '/query' }}",
@@ -26,9 +39,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -41,7 +63,10 @@
       "name": "Parse Digest Items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300],
+      "position": [
+        440,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const items = $input.all();\nconst pages = [];\nfor (const item of items) {\n  const results = item.json.results || [];\n  for (const page of results) {\n    const props = page.properties || {};\n    const titleArr = props['Title'] && props['Title'].title ? props['Title'].title : [];\n    const draftArr = props['Draft Reply'] && props['Draft Reply'].rich_text ? props['Draft Reply'].rich_text : [];\n    pages.push({\n      json: {\n        page_id: page.id,\n        title: titleArr[0] ? titleArr[0].plain_text : '',\n        url: props['URL'] && props['URL'].url ? props['URL'].url : '',\n        source: props['Source'] && props['Source'].select ? props['Source'].select.name : '',\n        boosted_score: props['Boosted Score'] && props['Boosted Score'].number !== null ? props['Boosted Score'].number : 0,\n        draft_reply: draftArr[0] ? draftArr[0].plain_text : '',\n      }\n    });\n  }\n}\nreturn pages;"
@@ -52,10 +77,13 @@
       "name": "Format Digest Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 300],
+      "position": [
+        660,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\n\nconst timestamp = new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short'});\nconst lines = items.map(item => {\n  const p = item.json;\n  const reply = p.draft_reply ? `  💬 ${p.draft_reply}` : '';\n  return `• ${p.title} (${p.source}) — Score: ${p.boosted_score}${reply ? '\\n' + reply : ''}\\n  🔗 ${p.url}`;\n}).join('\\n\\n');\n\nconst message = `📊 Signal Digest — ${timestamp}\\n\\n${lines}\\n\\n─────────────────────\\nTotal signals this batch: ${items.length}`;\n\nreturn [{ json: { message, count: items.length } }];"
+        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\n\nconst timestamp = new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short'});\nconst lines = items.map(item => {\n  const p = item.json;\n  const reply = p.draft_reply ? `  \ud83d\udcac ${p.draft_reply}` : '';\n  return `\u2022 ${p.title} (${p.source}) \u2014 Score: ${p.boosted_score}${reply ? '\\n' + reply : ''}\\n  \ud83d\udd17 ${p.url}`;\n}).join('\\n\\n');\n\nconst message = `\ud83d\udcca Signal Digest \u2014 ${timestamp}\\n\\n${lines}\\n\\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\nTotal signals this batch: ${items.length}`;\n\nreturn [{ json: { message, count: items.length } }];"
       }
     },
     {
@@ -63,7 +91,10 @@
       "name": "Telegram Send Digest",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [880, 300],
+      "position": [
+        880,
+        300
+      ],
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
@@ -71,14 +102,22 @@
         "text": "={{ $json.message }}",
         "additionalFields": {}
       },
-      "credentials": {"telegramApi": {"id": "1", "name": "TELEGRAM_API"}}
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
     },
     {
       "id": "n6",
       "name": "Flatten for Mark Alerted",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 300],
+      "position": [
+        1100,
+        300
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const pages = $('Parse Digest Items').all();\nreturn pages.map(item => ({ json: { page_id: item.json.page_id } }));"
@@ -89,7 +128,10 @@
       "name": "Update Alerted Flag",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [1320, 300],
+      "position": [
+        1320,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "url": "={{ 'https://api.notion.com/v1/pages/' + $json.page_id }}",
@@ -97,9 +139,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {"name": "Authorization", "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"},
-            {"name": "Notion-Version", "value": "2022-06-28"},
-            {"name": "Content-Type", "value": "application/json"}
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -109,12 +160,72 @@
     }
   ],
   "connections": {
-    "Schedule Trigger": {"main": [[{"node": "Query Medium Signals", "type": "main", "index": 0}]]},
-    "Query Medium Signals": {"main": [[{"node": "Parse Digest Items", "type": "main", "index": 0}]]},
-    "Parse Digest Items": {"main": [[{"node": "Format Digest Message", "type": "main", "index": 0}]]},
-    "Format Digest Message": {"main": [[{"node": "Telegram Send Digest", "type": "main", "index": 0}]]},
-    "Telegram Send Digest": {"main": [[{"node": "Flatten for Mark Alerted", "type": "main", "index": 0}]]},
-    "Flatten for Mark Alerted": {"main": [[{"node": "Update Alerted Flag", "type": "main", "index": 0}]]}
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Medium Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Medium Signals": {
+      "main": [
+        [
+          {
+            "node": "Parse Digest Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Digest Items": {
+      "main": [
+        [
+          {
+            "node": "Format Digest Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Digest Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Send Digest": {
+      "main": [
+        [
+          {
+            "node": "Flatten for Mark Alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten for Mark Alerted": {
+      "main": [
+        [
+          {
+            "node": "Update Alerted Flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1",
