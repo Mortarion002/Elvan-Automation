@@ -3,6 +3,7 @@
 Signal intelligence workflows for Elvan.ai, built in n8n.
 
 This project monitors public product and customer-feedback conversations, enriches them with LLM analysis, scores lead intent, stores structured records in Notion, and sends actionable Telegram alerts.
+Today, Notion remains the primary workflow datastore. Workflow 1 also dual-writes newly surfaced HN/Product Hunt signals into a shared Neon Postgres database as a parallel analytics channel for the dashboard.
 
 ## What This Project Does
 
@@ -15,7 +16,7 @@ Every cycle, the pipeline:
 5. Calls an LLM to extract pain point, intent, urgency, and draft reply.
 6. Scores and tiers each signal (`hot`, `medium`, `low`).
 7. Sends immediate Telegram alerts for hot leads.
-8. Writes all qualified signals to Notion.
+8. Writes all qualified signals to Notion and mirrors them to Neon.
 9. Sends digest and weekly summary reports from Notion.
 
 Timezone used across workflows: `Asia/Kolkata`.
@@ -52,6 +53,7 @@ Purpose:
 - Score and route into tiers.
 - Send hot alerts to Telegram.
 - Store all new tiered items in Notion.
+- Mirror all new tiered items into Neon `signal_events`.
 
 Schedule:
 - Cron: `0 */6 * * *`
@@ -65,6 +67,7 @@ Major stages:
 - `Parse Gemini Response`
 - `Scoring`
 - `Notion Dedup Query` (skip already-stored URLs)
+- `Prep Neon Signal Row` -> `Neon Upsert Signals` (parallel Neon mirror, fail-open)
 - `Route by Tier`
   - `hot`: Telegram alert + Notion insert (`Alerted = true`)
   - `medium`: Notion insert (`Alerted = false`)
@@ -122,6 +125,9 @@ Copy `.env.example` into your n8n environment and set real values:
 # Gemini
 GEMINI_API_KEY=your_gemini_api_key_here
 
+# Optional parallel analytics channel
+NEON_DATABASE_URL=your_neon_postgres_connection_string_here
+
 # Notion
 NOTION_API_KEY=your_notion_integration_token_here
 NOTION_DB_ID=your_notion_database_id_here
@@ -143,11 +149,13 @@ The workflow JSON expects these credential names in n8n:
 
 - `OPENAI_API` for `Workflow 1`
 - `GEMINI_API` for `Phase 6`
+- `NEON_POSTGRES` for the parallel Neon mirror in `Workflow 1`
 - `TELEGRAM_API` for Telegram sends
 
 Note:
 - Notion and Product Hunt are called via HTTP Request nodes using env vars in headers.
 - `Workflow 1` uses an n8n OpenAI credential, not an env-var API key in the workflow JSON.
+- The Neon Postgres node also uses an n8n credential, so set up a Postgres credential and bind it to the `Neon Upsert Signals` node after import if n8n does not auto-match by name.
 
 ## Notion Database Schema
 
@@ -230,6 +238,7 @@ After flattening, each signal is expected to include fields similar to:
 3. Create credentials in n8n:
    - `OPENAI_API`
    - `GEMINI_API`
+   - `NEON_POSTGRES`
    - `TELEGRAM_API`
 4. Create Notion databases and property schema listed above.
 5. Share both Notion databases with your Notion integration token.
@@ -258,6 +267,21 @@ This combination prevents repeat LLM processing in short windows and prevents du
 - `hot` (`score >= 7`): immediate Telegram alert + Notion row marked `Alerted = true`.
 - `medium` (`score 5-6`): stored in Notion, later included in digest, then marked alerted.
 - `low` (`score < 5`): stored for historical analysis, no immediate Telegram alert.
+
+## Shared Dashboard Integration
+
+The live dashboard can now combine:
+
+- X/Post and Reddit findings mirrored into Neon by the `X_Post` project
+- HN/Product Hunt signals mirrored into Neon by `Workflow 1`
+- HN/Product Hunt/Reddit signals stored in Notion by this repo
+
+That means you can keep the current n8n workflows unchanged while the dashboard reads:
+
+- Neon as the shared parallel channel
+- Notion as the primary n8n workflow datastore
+
+The workflow JSON keeps the Notion path as the operational source of truth and treats Neon as a fail-open mirror for dashboard aggregation.
 
 ## Troubleshooting
 

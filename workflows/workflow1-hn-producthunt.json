@@ -545,6 +545,58 @@
         "specifyBody": "json",
         "jsonBody": "={{ $json }}"
       }
+    },
+    {
+      "id": "n26",
+      "name": "Prep Neon Signal Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        -220
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const post = $json;\nconst normalizedSource = (() => {\n  if (post.source === 'HackerNews') return 'hn';\n  if (post.source === 'ProductHunt') return 'ph';\n  return String(post.source || 'unknown').trim().toLowerCase() || 'unknown';\n})();\nconst canonicalUrl = String(post.url || '').trim();\nconst externalId = String(post.objectID || post.ph_id || canonicalUrl || '').trim();\nconst dedupeId = canonicalUrl || externalId;\nif (!dedupeId) {\n  throw new Error('Prep Neon Signal Row requires a URL, objectID, or ph_id');\n}\nconst priority = String(post.tier || 'low').trim().toLowerCase() || 'low';\nreturn {\n  json: {\n    dedupe_key: `n8n:${normalizedSource}:${dedupeId}`,\n    source: normalizedSource,\n    source_system: 'n8n',\n    workflow: 'workflow1-hn-producthunt',\n    external_id: externalId || null,\n    title: String(post.title || 'Untitled signal').trim(),\n    body: String(post.body || '').trim() || null,\n    url: canonicalUrl || null,\n    author: String(post.author || '').trim() || null,\n    subreddit: String(post.subreddit || '').trim() || null,\n    intent: String(post.intent || 'learning').trim() || 'learning',\n    urgency: String(post.urgency || 'low').trim() || 'low',\n    priority,\n    tool_mentioned: String(post.tool_mentioned || '').trim() || null,\n    pain_point: String(post.pain_point || '').trim() || null,\n    elvan_angle: String(post.elvan_angle || '').trim() || null,\n    draft_reply: String(post.draft_reply || '').trim() || null,\n    score: Number(post.boosted_score ?? post.base_score ?? 0),\n    base_score: Number(post.base_score ?? 0),\n    boosted_score: Number(post.boosted_score ?? post.base_score ?? 0),\n    comments_count: Number(post.num_comments ?? post.comments_count ?? 0),\n    upvotes: Number(post.points ?? post.votes ?? 0),\n    alerted: priority === 'hot',\n    hot_lead: priority === 'hot',\n    occurred_at: new Date().toISOString()\n  }\n};"
+      }
+    },
+    {
+      "id": "n27",
+      "name": "Neon Upsert Signals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        3080,
+        -220
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "database",
+        "operation": "upsert",
+        "schema": {
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "mode": "name",
+          "value": "signal_events"
+        },
+        "dataMode": "autoMapInputData",
+        "columnToMatchOn": "dedupe_key",
+        "options": {
+          "queryBatching": "independently",
+          "replaceEmptyStrings": true,
+          "outputColumns": [
+            "dedupe_key"
+          ]
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
     }
   ],
   "connections": {
@@ -733,6 +785,11 @@
       "main": [
         [
           {
+            "node": "Prep Neon Signal Row",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Route by Tier",
             "type": "main",
             "index": 0
@@ -803,6 +860,17 @@
         [
           {
             "node": "Notion Insert Low",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Neon Signal Row": {
+      "main": [
+        [
+          {
+            "node": "Neon Upsert Signals",
             "type": "main",
             "index": 0
           }
