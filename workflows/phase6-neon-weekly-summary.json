@@ -1,0 +1,308 @@
+{
+  "id": "neon-weekly-summary",
+  "name": "Phase 6 - Neon Weekly Summary Report",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Query Neon 7 Days",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(json_agg(row_to_json(signals)), '[]'::json) AS signals FROM (SELECT dedupe_key, title, source, intent, urgency, priority, tool_mentioned, pain_point, elvan_angle, draft_reply, url, score, base_score, boosted_score, occurred_at FROM public.signal_events WHERE source_system = 'n8n' AND occurred_at >= NOW() - INTERVAL '7 days' ORDER BY score DESC, occurred_at DESC LIMIT 500) signals;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Compute Weekly Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const row = $input.first()?.json || {};\nlet signals = row.signals || [];\nif (typeof signals === 'string') {\n  try { signals = JSON.parse(signals); } catch (_) { signals = []; }\n}\nif (!Array.isArray(signals)) signals = [];\nconst bySource = {};\nsignals.forEach(p => { const key = p.source || 'unknown'; bySource[key] = (bySource[key] || 0) + 1; });\nconst byIntent = {};\nsignals.forEach(p => { const key = p.intent || 'unknown'; byIntent[key] = (byIntent[key] || 0) + 1; });\nconst topIntent = Object.entries(byIntent).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';\nconst hotCount = signals.filter(p => p.priority === 'hot' || Number(p.boosted_score || p.score || 0) >= 7).length;\nconst top5Leads = [...signals].sort((a, b) => Number(b.score || b.boosted_score || 0) - Number(a.score || a.boosted_score || 0)).slice(0, 5);\nconst competitors = {};\nsignals.forEach(p => { const tool = String(p.tool_mentioned || '').toLowerCase().trim(); if (tool) competitors[tool] = (competitors[tool] || 0) + 1; });\nconst top3Competitors = Object.entries(competitors).sort((a, b) => b[1] - a[1]).slice(0, 3);\nconst now = new Date();\nconst weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);\nconst fmt = d => d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });\nconst dateRange = `${fmt(weekAgo)} - ${fmt(now)}`;\nconst sourceStr = Object.entries(bySource).map(([k, v]) => `${k}: ${v}`).join(', ') || 'none';\nconst competitorStr = top3Competitors.map(([name, count], i) => `${i + 1}. ${name} (${count})`).join(', ') || 'none';\nconst topLeadStr = top5Leads.length > 0 ? `\"${top5Leads[0].title}\" - Score: ${top5Leads[0].score || top5Leads[0].boosted_score || 0}` : 'N/A';\nconst gemini_prompt = `You are a business analyst for Elvan.ai, a B2B SaaS NPS/CSAT/CES survey platform.\\n\\nWrite a 3-4 sentence narrative summary of this week's signal intelligence. Focus on key patterns, buying intent, and what the team should prioritize. No bullet points. Plain text only.\\n\\nWeekly data (${dateRange}):\\n- Total signals: ${signals.length}\\n- Hot leads (priority hot or score >= 7): ${hotCount}\\n- By source: ${sourceStr}\\n- Dominant intent: ${topIntent}\\n- Top competitors: ${competitorStr}\\n- Hottest lead: ${topLeadStr}`;\nreturn [{ json: { total: signals.length, hot_count: hotCount, by_source: bySource, top_intent: topIntent, top5_leads: top5Leads, top3_competitors: top3Competitors, date_range: dateRange, gemini_prompt } }];"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        500
+      ],
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash"
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "1",
+          "name": "GEMINI_API"
+        }
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.gemini_prompt }}"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Parse Narrative",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first()?.json || {};\nconst stats = $('Compute Weekly Stats').first().json;\nconst narrative = String(item.text || item.output || item.response || item.content || '').trim();\nreturn [{ json: { ...stats, narrative } }];"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Build Telegram Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const stats = $json;\nconst sourceStr = Object.entries(stats.by_source || {}).map(([k, v]) => `${k} (${v})`).join(' | ') || 'N/A';\nconst competitorLines = (stats.top3_competitors || []).map(([name, count], i) => `${i + 1}. ${name} - ${count} mentions`).join('\\n') || 'None this week';\nconst hotLead = stats.top5_leads && stats.top5_leads.length > 0 ? stats.top5_leads[0] : null;\nconst hotLeadStr = hotLead ? `${hotLead.title} - Score: ${hotLead.score || hotLead.boosted_score || 0}\\n${hotLead.url || ''}` : 'N/A';\nlet message = `Weekly Signal Report - ${stats.date_range}\\n\\nTotal Signals: ${stats.total}\\nHot Leads: ${stats.hot_count}\\nSources: ${sourceStr}\\n\\nTop Competitors Mentioned:\\n${competitorLines}\\n\\nTop Intent: ${stats.top_intent}\\n\\nHottest Lead This Week:\\n${hotLeadStr}\\n\\nSummary:\\n${stats.narrative || 'No narrative generated.'}`;\nif (message.length > 3800) message = message.slice(0, 3750).trimEnd() + '\\n\\n...truncated for Telegram';\nreturn { json: { ...stats, message } };"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Telegram Send Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Prep Notion Weekly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const stats = $('Parse Narrative').first().json;\nreturn {\n  json: {\n    parent: { database_id: $env.NOTION_WEEKLY_DB_ID },\n    properties: {\n      'Title': { title: [{ text: { content: ('Weekly Report - ' + stats.date_range).substring(0, 2000) } }] },\n      'Source': { select: { name: 'WeeklyReport' } },\n      'Pain Point': { rich_text: [{ text: { content: (stats.narrative || '').substring(0, 2000) } }] },\n      'Elvan Angle': { rich_text: [{ text: { content: (`Total: ${stats.total} | Hot: ${stats.hot_count} | Top intent: ${stats.top_intent}`).substring(0, 2000) } }] },\n      'Boosted Score': { number: stats.hot_count || 0 },\n      'Alerted': { checkbox: true },\n      'Created At': { date: { start: new Date().toISOString() } }\n    }\n  }\n};"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Create Notion Report Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1760,
+        300
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "url": "https://api.notion.com/v1/pages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Neon 7 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Neon 7 Days": {
+      "main": [
+        [
+          {
+            "node": "Compute Weekly Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Weekly Stats": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Parse Narrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Narrative": {
+      "main": [
+        [
+          {
+            "node": "Build Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Send Summary": {
+      "main": [
+        [
+          {
+            "node": "Prep Notion Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Notion Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Report Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}

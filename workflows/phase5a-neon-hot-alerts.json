@@ -1,0 +1,164 @@
+{
+  "id": "neon-hot-alert",
+  "name": "Phase 5A - Neon Hot Telegram Alerts",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Query Unalerted Hot Signals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT dedupe_key, title, source, intent, urgency, priority, tool_mentioned, pain_point, elvan_angle, draft_reply, url, score, base_score, boosted_score, occurred_at FROM public.signal_events WHERE source_system = 'n8n' AND priority = 'hot' AND COALESCE(alerted, false) = false ORDER BY score DESC, occurred_at DESC LIMIT 10;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Format Hot Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.all().map(item => {\n  const p = item.json;\n  const score = p.boosted_score ?? p.score ?? 0;\n  const message = [\n    `HOT LEAD - ${p.source || 'unknown'}`,\n    '',\n    `Score: ${score}/10 | Intent: ${p.intent || 'unknown'} | Urgency: ${p.urgency || 'unknown'}`,\n    `${p.title || 'Untitled signal'}`,\n    '',\n    `Pain Point: ${p.pain_point || 'N/A'}`,\n    `Tool Mentioned: ${p.tool_mentioned || 'N/A'}`,\n    `Elvan Angle: ${p.elvan_angle || 'N/A'}`,\n    '',\n    `Draft Reply:`,\n    `${p.draft_reply || 'N/A'}`,\n    '',\n    `${p.url || ''}`,\n    '',\n    'Review draft and post manually.'\n  ].join('\\n');\n  return { json: { ...p, message } };\n});"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Telegram Send Hot Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Mark Neon Alerted",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        300
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "={{ \"UPDATE public.signal_events SET alerted = true, hot_lead = true WHERE dedupe_key = '\" + String($('Format Hot Alert').item.json.dedupe_key).replace(/'/g, \"''\") + \"';\" }}",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Unalerted Hot Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Unalerted Hot Signals": {
+      "main": [
+        [
+          {
+            "node": "Format Hot Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Hot Alert": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Hot Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Send Hot Alert": {
+      "main": [
+        [
+          {
+            "node": "Mark Neon Alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}

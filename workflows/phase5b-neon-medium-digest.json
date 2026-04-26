@@ -1,0 +1,190 @@
+{
+  "id": "neon-medium-digest",
+  "name": "Phase 5B - Neon Medium Digest",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 */6 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Query Unalerted Medium Signals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT dedupe_key, title, source, intent, urgency, priority, tool_mentioned, pain_point, elvan_angle, draft_reply, url, score, base_score, boosted_score, occurred_at FROM public.signal_events WHERE source_system = 'n8n' AND priority = 'medium' AND COALESCE(alerted, false) = false AND occurred_at >= NOW() - INTERVAL '24 hours' ORDER BY score DESC, occurred_at DESC LIMIT 100;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Format Medium Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = [...$input.all()].sort((a, b) => Number(b.json.score || b.json.boosted_score || 0) - Number(a.json.score || a.json.boosted_score || 0));\nif (items.length === 0) return [];\nconst selected = items.slice(0, 8);\nconst timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });\nconst lines = selected.map((item, index) => {\n  const p = item.json;\n  const score = p.boosted_score ?? p.score ?? 0;\n  const reply = p.draft_reply ? `\\n   Reply: ${p.draft_reply}` : '';\n  return `${index + 1}. ${p.title || 'Untitled signal'} (${p.source || 'unknown'}) - Score: ${score}${reply}\\n   ${p.url || ''}`;\n}).join('\\n\\n');\nconst hiddenCount = Math.max(0, items.length - selected.length);\nconst hidden = hiddenCount > 0 ? `\\n\\n...and ${hiddenCount} more medium signal(s) not shown.` : '';\nlet message = `Signal Digest - ${timestamp}\\n\\n${lines}${hidden}\\n\\nTotal medium signals this batch: ${items.length}`;\nif (message.length > 3800) message = message.slice(0, 3750).trimEnd() + '\\n\\n...truncated for Telegram';\nreturn [{ json: { message, dedupe_keys: selected.map(item => item.json.dedupe_key) } }];"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Telegram Send Digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "TELEGRAM_API"
+        }
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Flatten Dedupe Keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const keys = $('Format Medium Digest').first().json.dedupe_keys || [];\nreturn keys.map(dedupe_key => ({ json: { dedupe_key } }));"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Mark Neon Alerted",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        300
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "={{ \"UPDATE public.signal_events SET alerted = true WHERE dedupe_key = '\" + String($json.dedupe_key).replace(/'/g, \"''\") + \"';\" }}",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "NEON_POSTGRES"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Unalerted Medium Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Unalerted Medium Signals": {
+      "main": [
+        [
+          {
+            "node": "Format Medium Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Medium Digest": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Send Digest": {
+      "main": [
+        [
+          {
+            "node": "Flatten Dedupe Keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Dedupe Keys": {
+      "main": [
+        [
+          {
+            "node": "Mark Neon Alerted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}

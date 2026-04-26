@@ -2,8 +2,8 @@
 
 Signal intelligence workflows for Elvan.ai, built in n8n.
 
-This project monitors public product and customer-feedback conversations, enriches them with LLM analysis, scores lead intent, stores structured records in Notion, and sends actionable Telegram alerts.
-Today, Notion remains the primary workflow datastore. Workflow 1 also dual-writes newly surfaced HN/Product Hunt signals into a shared Neon Postgres database as a parallel analytics channel for the dashboard.
+This project monitors public product and customer-feedback conversations, enriches them with LLM analysis, scores lead intent, stores structured records in Neon Postgres, and sends actionable Telegram alerts.
+Neon is now the operational handoff between workflows. Workflow 1 only collects, analyzes, scores, and upserts signals into Neon. Separate downstream workflows read from Neon for hot alerts, medium digests, and weekly summaries.
 
 ## What This Project Does
 
@@ -12,12 +12,12 @@ Every cycle, the pipeline:
 1. Collects posts from Hacker News and Product Hunt.
 2. Normalizes post payloads into one common shape.
 3. Filters for NPS/CSAT/CES and feedback-related relevance.
-4. Removes duplicates using in-memory and Notion-level checks.
+4. Removes duplicates using in-memory checks and Neon upserts.
 5. Calls an LLM to extract pain point, intent, urgency, and draft reply.
 6. Scores and tiers each signal (`hot`, `medium`, `low`).
-7. Sends immediate Telegram alerts for hot leads.
-8. Writes all qualified signals to Notion and mirrors them to Neon.
-9. Sends digest and weekly summary reports from Notion.
+7. Writes all qualified signals to Neon `signal_events`.
+8. Sends hot Telegram alerts from a separate Neon reader workflow.
+9. Sends medium digest and weekly summary reports from Neon.
 
 Timezone used across workflows: `Asia/Kolkata`.
 
@@ -38,9 +38,14 @@ Timezone used across workflows: `Asia/Kolkata`.
 |  `- weekly-summary.js
 `- workflows/
    |- workflow1-hn-producthunt.json
+   |- phase5a-neon-hot-alerts.json
+   |- phase5b-neon-medium-digest.json
+   |- phase6-neon-weekly-summary.json
    |- phase5-telegram.json
    `- phase6-weekly-summary.json
 ```
+
+`phase5-telegram.json` and `phase6-weekly-summary.json` are the older Notion-backed reader workflows. Prefer the Neon-backed workflows for new imports.
 
 ## Workflow Overview
 
@@ -51,9 +56,8 @@ Purpose:
 - Collect from HN + Product Hunt every 6 hours.
 - Enrich with an OpenAI chat model.
 - Score and route into tiers.
-- Send hot alerts to Telegram.
-- Store all new tiered items in Notion.
-- Mirror all new tiered items into Neon `signal_events`.
+- Upsert all scored items into Neon `signal_events`.
+- Stop there; alerting and reporting are handled by separate Neon reader workflows.
 
 Schedule:
 - Cron: `0 */6 * * *`
@@ -64,22 +68,28 @@ Major stages:
 - `Merge Sources` -> `Keyword Filter` -> `Limit` (max 20)
 - `Dedup Static Memory` (24h URL memory)
 - `Basic LLM Chain` with `ChatGPT Chat Model`
-- `Parse Gemini Response`
+- `Parse LLM Response`
 - `Scoring`
-- `Notion Dedup Query` (skip already-stored URLs)
-- `Prep Neon Signal Row` -> `Neon Upsert Signals` (parallel Neon mirror, fail-open)
-- `Route by Tier`
-  - `hot`: Telegram alert + Notion insert (`Alerted = true`)
-  - `medium`: Notion insert (`Alerted = false`)
-  - `low`: Notion insert (`Alerted = false`)
+- `Prep Neon Signal Row` -> `Neon Existing Signal Query` -> `Filter New Neon Rows` -> `Neon Upsert Signals`
 
-### 2) Medium Signal Digest
-File: `workflows/phase5-telegram.json`
+### 2) Hot Signal Alerts
+File: `workflows/phase5a-neon-hot-alerts.json`
 
 Purpose:
-- Every 6 hours, pull recent medium signals (`score 5-6`) from Notion where `Alerted = false`.
+- Every 10 minutes, query Neon for unalerted hot signals.
+- Send one Telegram alert per hot signal.
+- Mark sent records as `alerted = true` in Neon.
+
+Schedule:
+- Cron: `*/10 * * * *`
+
+### 3) Medium Signal Digest
+File: `workflows/phase5b-neon-medium-digest.json`
+
+Purpose:
+- Every 6 hours, pull recent medium signals from Neon where `alerted = false`.
 - Send a compact Telegram digest.
-- Mark sent records as `Alerted = true`.
+- Mark sent records as `alerted = true` in Neon.
 
 Schedule:
 - Cron: `15 */6 * * *`
@@ -90,11 +100,11 @@ Digest behavior:
 - Sends top 8 items.
 - Truncates message near Telegram length limits.
 
-### 3) Weekly Summary Report
-File: `workflows/phase6-weekly-summary.json`
+### 4) Weekly Summary Report
+File: `workflows/phase6-neon-weekly-summary.json`
 
 Purpose:
-- Weekly rollup of all signals from last 7 days.
+- Weekly rollup of all Neon signals from last 7 days.
 - Computes stats and asks Gemini for a narrative summary.
 - Creates a weekly report page in a second Notion database.
 - Sends a Telegram weekly report message with key stats.
@@ -130,7 +140,7 @@ NEON_DATABASE_URL=your_neon_postgres_connection_string_here
 
 # Notion
 NOTION_API_KEY=your_notion_integration_token_here
-NOTION_DB_ID=your_notion_database_id_here
+NOTION_DB_ID=your_legacy_signal_database_id_here
 NOTION_WEEKLY_DB_ID=your_weekly_report_database_id_here
 
 # Telegram
@@ -149,17 +159,51 @@ The workflow JSON expects these credential names in n8n:
 
 - `OPENAI_API` for `Workflow 1`
 - `GEMINI_API` for `Phase 6`
-- `NEON_POSTGRES` for the parallel Neon mirror in `Workflow 1`
+- `NEON_POSTGRES` for Workflow 1 and all Neon-backed reader workflows
 - `TELEGRAM_API` for Telegram sends
 
 Note:
-- Notion and Product Hunt are called via HTTP Request nodes using env vars in headers.
+- Product Hunt and weekly Notion report creation use HTTP Request nodes with env vars in headers.
 - `Workflow 1` uses an n8n OpenAI credential, not an env-var API key in the workflow JSON.
-- The Neon Postgres node also uses an n8n credential, so set up a Postgres credential and bind it to the `Neon Upsert Signals` node after import if n8n does not auto-match by name.
+- The Neon Postgres nodes use an n8n credential, so set up a Postgres credential and bind it to the Neon query/upsert nodes after import if n8n does not auto-match by name.
+
+## Neon Signal Table
+
+The Neon-backed workflows expect `public.signal_events` to contain the fields written by Workflow 1:
+
+- `dedupe_key`
+- `source`
+- `source_system`
+- `workflow`
+- `external_id`
+- `title`
+- `body`
+- `url`
+- `author`
+- `subreddit`
+- `intent`
+- `urgency`
+- `priority`
+- `tool_mentioned`
+- `pain_point`
+- `elvan_angle`
+- `draft_reply`
+- `score`
+- `base_score`
+- `boosted_score`
+- `comments_count`
+- `upvotes`
+- `alerted`
+- `hot_lead`
+- `occurred_at`
+
+The collector upserts on `dedupe_key`, so repeated collector runs should update existing rows instead of creating duplicates.
 
 ## Notion Database Schema
 
-### Primary Signals Database (`NOTION_DB_ID`)
+### Optional Primary Signals Database (`NOTION_DB_ID`)
+
+The old Notion-backed digest workflows use this schema. The new Neon-backed alert and digest workflows do not require per-signal Notion inserts.
 
 Create these properties exactly (types matter):
 
@@ -185,7 +229,7 @@ Recommended select options:
 
 ### Weekly Reports Database (`NOTION_WEEKLY_DB_ID`)
 
-Used by `phase6-weekly-summary.json`.
+Used by `phase6-neon-weekly-summary.json`.
 
 Minimum required properties:
 - `Title` -> Title
@@ -240,12 +284,13 @@ After flattening, each signal is expected to include fields similar to:
    - `GEMINI_API`
    - `NEON_POSTGRES`
    - `TELEGRAM_API`
-4. Create Notion databases and property schema listed above.
-5. Share both Notion databases with your Notion integration token.
+4. Create the weekly Notion database if you want weekly report pages.
+5. Share the weekly Notion database with your Notion integration token.
 6. Import workflows in this order:
    - `workflows/workflow1-hn-producthunt.json`
-   - `workflows/phase5-telegram.json`
-   - `workflows/phase6-weekly-summary.json`
+   - `workflows/phase5a-neon-hot-alerts.json`
+   - `workflows/phase5b-neon-medium-digest.json`
+   - `workflows/phase6-neon-weekly-summary.json`
 7. Open each imported workflow and verify:
    - credential bindings
    - env-var references
@@ -258,30 +303,25 @@ After flattening, each signal is expected to include fields similar to:
 There are two layers of duplicate protection:
 
 - Layer 1: In-workflow static memory (`seenUrls`) with 24h pruning.
-- Layer 2: Notion URL query before insert (`URL` equality check).
+- Layer 2: Neon existence check plus upsert by `dedupe_key`.
 
-This combination prevents repeat LLM processing in short windows and prevents duplicate database rows over longer periods.
+This combination prevents repeat LLM processing in short windows and prevents duplicate Neon rows over longer periods. Existing Neon rows are skipped before the upsert so previously alerted rows are not reset to unalerted.
 
 ## Alerting Logic
 
-- `hot` (`score >= 7`): immediate Telegram alert + Notion row marked `Alerted = true`.
-- `medium` (`score 5-6`): stored in Notion, later included in digest, then marked alerted.
-- `low` (`score < 5`): stored for historical analysis, no immediate Telegram alert.
+- `hot` (`score >= 7`): written to Neon, then alerted by `phase5a-neon-hot-alerts.json`.
+- `medium` (`score 5-6`): written to Neon, then included in `phase5b-neon-medium-digest.json`.
+- `low` (`score < 5`): written to Neon for historical analysis, no Telegram alert.
 
 ## Shared Dashboard Integration
 
 The live dashboard can now combine:
 
 - X/Post and Reddit findings mirrored into Neon by the `X_Post` project
-- HN/Product Hunt signals mirrored into Neon by `Workflow 1`
-- HN/Product Hunt/Reddit signals stored in Notion by this repo
+- HN/Product Hunt signals written into Neon by `Workflow 1`
+- Weekly report pages stored in Notion by the Neon weekly workflow
 
-That means you can keep the current n8n workflows unchanged while the dashboard reads:
-
-- Neon as the shared parallel channel
-- Notion as the primary n8n workflow datastore
-
-The workflow JSON keeps the Notion path as the operational source of truth and treats Neon as a fail-open mirror for dashboard aggregation.
+That means the dashboard and downstream automations can read the same operational signal table.
 
 ## Troubleshooting
 
@@ -316,6 +356,7 @@ The workflow JSON keeps the Notion path as the operational source of truth and t
 - Scoring logic in `scripts/scoring.js` may differ from embedded scoring code in exported workflow JSON; keep both synchronized when changing ranking rules.
 - Add retries/backoff and observability (error channel, failure Telegram, execution tags).
 - Add automated consistency checks between `scripts/` and embedded workflow `jsCode`.
+- The older Notion-backed `phase5-telegram.json` and `phase6-weekly-summary.json` remain in the repo for reference, but the Neon-backed workflows should be used going forward.
 
 ## License
 
