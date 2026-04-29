@@ -35,7 +35,7 @@
       "parameters": {
         "resource": "database",
         "operation": "executeQuery",
-        "query": "SELECT dedupe_key, title, source, intent, urgency, priority, tool_mentioned, pain_point, elvan_angle, draft_reply, url, score, base_score, boosted_score, occurred_at FROM public.signal_events WHERE source_system = 'n8n' AND priority = 'hot' AND COALESCE(alerted, false) = false ORDER BY score DESC, occurred_at DESC LIMIT 10;",
+        "query": "SELECT dedupe_key, title, source, intent, urgency, priority, tool_mentioned, pain_point, elvan_angle, draft_reply, url, score, base_score, boosted_score, occurred_at\nFROM public.signal_events\nWHERE source_system = 'n8n'\n  AND priority = 'hot'\n  AND COALESCE(alerted, false) = false\n  AND COALESCE(score, boosted_score, 0) >= 8\n  AND source IN ('hn', 'ph')\n  AND NULLIF(TRIM(title), '') IS NOT NULL\n  AND title <> 'Untitled signal'\n  AND NULLIF(TRIM(url), '') IS NOT NULL\n  AND NULLIF(TRIM(draft_reply), '') IS NOT NULL\nORDER BY score DESC, occurred_at DESC\nLIMIT 10;",
         "options": {
           "queryBatching": "independently"
         }
@@ -58,7 +58,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "return $input.all().map(item => {\n  const p = item.json;\n  const score = p.boosted_score ?? p.score ?? 0;\n  const message = [\n    `HOT LEAD - ${p.source || 'unknown'}`,\n    '',\n    `Score: ${score}/10 | Intent: ${p.intent || 'unknown'} | Urgency: ${p.urgency || 'unknown'}`,\n    `${p.title || 'Untitled signal'}`,\n    '',\n    `Pain Point: ${p.pain_point || 'N/A'}`,\n    `Tool Mentioned: ${p.tool_mentioned || 'N/A'}`,\n    `Elvan Angle: ${p.elvan_angle || 'N/A'}`,\n    '',\n    `Draft Reply:`,\n    `${p.draft_reply || 'N/A'}`,\n    '',\n    `${p.url || ''}`,\n    '',\n    'Review draft and post manually.'\n  ].join('\\n');\n  return { json: { ...p, message } };\n});"
+        "jsCode": "return $input.all().map(item => {\n  const p = item.json;\n  const score = p.boosted_score ?? p.score ?? 0;\n  const sourceLabel = p.source === 'hn' ? 'HackerNews' : p.source === 'ph' ? 'ProductHunt' : p.source;\n  const message = [\n    'HOT LEAD - ' + sourceLabel,\n    '',\n    'Score: ' + score + '/10 | Intent: ' + (p.intent || 'unknown') + ' | Urgency: ' + (p.urgency || 'unknown'),\n    String(p.title),\n    '',\n    'Pain Point: ' + (p.pain_point || 'N/A'),\n    'Tool Mentioned: ' + (p.tool_mentioned || 'N/A'),\n    'Elvan Angle: ' + (p.elvan_angle || 'N/A'),\n    '',\n    'Draft Reply:',\n    String(p.draft_reply),\n    '',\n    String(p.url),\n    '',\n    'Review draft and post manually.'\n  ].join('\\n');\n  return { json: { ...p, message } };\n});"
       }
     },
     {
